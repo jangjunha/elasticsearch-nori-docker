@@ -1,0 +1,48 @@
+version: 2.1
+
+jobs:
+  build_and_push:
+    parameters:
+      image_tag:
+        type: string
+    docker:
+      - image: cimg/python:3.8
+    resource_class: small
+    steps:
+      - setup_remote_docker
+      - checkout
+      - run:
+          name: Setup environment variables
+          command: |
+            echo 'export IMAGE_NAME="jangjunha/elasticsearch-nori"' >> $BASH_ENV
+            echo 'export IMAGE_TAG="<< parameters.image_tag >>"' >> $BASH_ENV
+      - run:
+          name: Build image
+          command: |
+            docker build \
+              --build-arg image_tag="<< parameters.image_tag >>" \
+              -t "${IMAGE_NAME}:${IMAGE_TAG}" \
+              .
+      - run:
+          name: Login to Docker Hub
+          command: |
+            echo "${DOCKERHUB_PASSWORD}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+      - run:
+          name: Publish Docker image to Docker hub
+          command: |
+            docker push "${IMAGE_NAME}:${IMAGE_TAG}"
+
+workflows:
+  version: 2
+  main:
+    jobs:
+      - build_and_push:
+          matrix:
+            parameters:
+              image_tag:
+                - 7.13.2
+          context: dockerhub
+          filters:
+            branches:
+              only:
+                - main
