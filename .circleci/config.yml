@@ -5,11 +5,12 @@ jobs:
     parameters:
       image_tag:
         type: string
-    docker:
-      - image: cimg/python:3.8
-    resource_class: small
+    machine:
+      image: ubuntu-2004:202104-01
+    environment:
+      DOCKER_BUILDKIT: 1
+      BUILDX_PLATFORMS: linux/amd64,linux/arm64
     steps:
-      - setup_remote_docker
       - checkout
       - run:
           name: Setup environment variables
@@ -17,20 +18,32 @@ jobs:
             echo 'export IMAGE_NAME="jangjunha/elasticsearch-nori"' >> $BASH_ENV
             echo 'export IMAGE_TAG="<< parameters.image_tag >>"' >> $BASH_ENV
       - run:
-          name: Build image
+          name: Install buildx
           command: |
-            docker build \
-              --build-arg image_tag="<< parameters.image_tag >>" \
-              -t "${IMAGE_NAME}:${IMAGE_TAG}" \
-              .
+            BUILDX_BINARY_URL="https://github.com/docker/buildx/releases/download/v0.5.1/buildx-v0.5.1.linux-amd64"
+            mkdir -vp ~/.docker/cli-plugins/
+            curl --silent --show-error -L -f --retry 3 \
+              --output ~/.docker/cli-plugins/docker-buildx \
+              "${BUILDX_BINARY_URL}"
+            chmod a+x ~/.docker/cli-plugins/docker-buildx
+            docker buildx version
+      - run:
+          name: Install binfmt
+          command: |
+            docker run --privileged --rm tonistiigi/binfmt --install "${BUILDX_PLATFORMS}"
       - run:
           name: Login to Docker Hub
           command: |
             echo "${DOCKERHUB_PASSWORD}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
       - run:
-          name: Publish Docker image to Docker hub
+          name: Build and Push Image
           command: |
-            docker push "${IMAGE_NAME}:${IMAGE_TAG}"
+            docker buildx create --name builder --use
+            docker buildx build --push \
+              --build-arg image_tag="<< parameters.image_tag >>" \
+              --platform "${BUILDX_PLATFORMS}" \
+              -t "${IMAGE_NAME}:${IMAGE_TAG}" \
+              .
 
 workflows:
   version: 2
